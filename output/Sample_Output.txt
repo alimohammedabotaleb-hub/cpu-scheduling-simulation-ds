@@ -1,0 +1,123 @@
+CPU SCHEDULING SIMULATOR USING DATA STRUCTURES
+================================================
+The program runs automatically using the built-in sample.
+Priority rule: a smaller number means a higher priority.
+Round Robin time quantum: 2
+Context-switch cost: 0 time units.
+
+Process   Arrival   Burst     Priority  
+----------------------------------------
+P1        2         5         3         
+P2        3         2         1         
+P3        4         8         4         
+P4        5         3         2         
+P5        7         4         1         
+
+Data structures: Array, Circular Queue, Binary Min-Heap, Linked List, and Stack.
+
+
+============================================================================
+FCFS
+============================================================================
+Execution order: P1 -> P2 -> P3 -> P4 -> P5
+Gantt chart:     [0-2: IDLE] [2-7: P1] [7-9: P2] [9-17: P3] [17-20: P4] [20-24: P5] 
+Stack history (latest first): P5 -> P4 -> P3 -> P2 -> P1
+
+PID      AT     BT     Priority  CT     WT     TAT    
+------------------------------------------------------
+P1       2      5      3         7      0      5      
+P2       3      2      1         9      4      6      
+P3       4      8      4         17     5      13     
+P4       5      3      2         20     12     15     
+P5       7      4      1         24     13     17     
+
+Average Waiting Time    : 6.80
+Average Turnaround Time : 11.20
+CPU Busy Time           : 22
+Total Simulation Time   : 24
+CPU Idle Time           : 2
+CPU Utilization         : 91.67%
+
+
+============================================================================
+SJF (Non-Preemptive)
+============================================================================
+Execution order: P1 -> P2 -> P4 -> P5 -> P3
+Gantt chart:     [0-2: IDLE] [2-7: P1] [7-9: P2] [9-12: P4] [12-16: P5] [16-24: P3] 
+Stack history (latest first): P3 -> P5 -> P4 -> P2 -> P1
+
+PID      AT     BT     Priority  CT     WT     TAT    
+------------------------------------------------------
+P1       2      5      3         7      0      5      
+P2       3      2      1         9      4      6      
+P3       4      8      4         24     12     20     
+P4       5      3      2         12     4      7      
+P5       7      4      1         16     5      9      
+
+Average Waiting Time    : 5.00
+Average Turnaround Time : 9.40
+CPU Busy Time           : 22
+Total Simulation Time   : 24
+CPU Idle Time           : 2
+CPU Utilization         : 91.67%
+
+
+============================================================================
+Priority (Non-Preemptive)
+============================================================================
+Execution order: P1 -> P2 -> P5 -> P4 -> P3
+Gantt chart:     [0-2: IDLE] [2-7: P1] [7-9: P2] [9-13: P5] [13-16: P4] [16-24: P3] 
+Stack history (latest first): P3 -> P4 -> P5 -> P2 -> P1
+
+PID      AT     BT     Priority  CT     WT     TAT    
+------------------------------------------------------
+P1       2      5      3         7      0      5      
+P2       3      2      1         9      4      6      
+P3       4      8      4         24     12     20     
+P4       5      3      2         16     8      11     
+P5       7      4      1         13     2      6      
+
+Average Waiting Time    : 5.20
+Average Turnaround Time : 9.60
+CPU Busy Time           : 22
+Total Simulation Time   : 24
+CPU Idle Time           : 2
+CPU Utilization         : 91.67%
+
+
+============================================================================
+Round Robin (q=2)
+============================================================================
+Execution order: P1 -> P2 -> P3 -> P1 -> P4 -> P5 -> P3 -> P1 -> P4 -> P5 -> P3 -> P3
+Gantt chart:     [0-2: IDLE] [2-4: P1] [4-6: P2] [6-8: P3] [8-10: P1] [10-12: P4] [12-14: P5] [14-16: P3] [16-17: P1] [17-18: P4] [18-20: P5] [20-22: P3] [22-24: P3] 
+Stack history (latest first): P3 -> P3 -> P5 -> P4 -> P1 -> P3 -> P5 -> P4 -> P1 -> P3 -> P2 -> P1
+
+PID      AT     BT     Priority  CT     WT     TAT    
+------------------------------------------------------
+P1       2      5      3         17     10     15     
+P2       3      2      1         6      1      3      
+P3       4      8      4         24     12     20     
+P4       5      3      2         18     10     13     
+P5       7      4      1         20     9      13     
+
+Average Waiting Time    : 8.40
+Average Turnaround Time : 12.80
+CPU Busy Time           : 22
+Total Simulation Time   : 24
+CPU Idle Time           : 2
+CPU Utilization         : 91.67%
+
+
+==========================================================================================
+PERFORMANCE COMPARISON
+==========================================================================================
+Algorithm                     Avg WT      Avg TAT     Busy        Total       CPU Util.   
+------------------------------------------------------------------------------------------
+FCFS                          6.80        11.20       22          24          91.67%
+SJF (Non-Preemptive)          5.00        9.40        22          24          91.67%
+Priority (Non-Preemptive)     5.20        9.60        22          24          91.67%
+Round Robin (q=2)             8.40        12.80       22          24          91.67%
+
+Lowest average waiting time    : SJF (Non-Preemptive)
+Lowest average turnaround time : SJF (Non-Preemptive)
+Note: utilization is equal here because context-switch cost is zero and all algorithms have the same initial idle interval.
