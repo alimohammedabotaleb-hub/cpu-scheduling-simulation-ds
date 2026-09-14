@@ -52,6 +52,12 @@ g++ -std=c++17 -Wall -Wextra -pedantic src/CPU_Scheduling_Simulator.cpp -o CPU_S
 
 ويمكن تشغيل الملف `run_windows.bat` مباشرة من المجلد الرئيس.
 
+### عرض النتائج أثناء المناقشة
+
+يشغّل `START_DEMO_WINDOWS.bat` المصدر الحالي بعد تجميعه، ويحفظ نتائج التنفيذ الجديدة في `output/Live_Output.txt` ثم يفتحها في المفكرة لتسهيل التنقل بينها. يتطلب مترجم `g++` يدعم C++17 ومضافًا إلى `PATH`. عند فشل التجميع أو التنفيذ، يتوقف قبل فتح النتائج.
+
+يتضمن [دليل العرض والتشغيل](docs/Presentation_and_Run_Guide_AR.pdf) ترتيب عرض مدته نحو ست دقائق، وخطوات التشغيل من Dev-C++، وشرح النتائج، ومواضع الكود المهمة، وأسئلة المناقشة المتوقعة. وتوجد [نسخة Word](docs/Presentation_and_Run_Guide_AR.docx) قابلة للتعديل.
+
 ### Linux أو macOS
 
 ```bash
@@ -80,12 +86,15 @@ cpu-scheduling-simulation-ds/
 │   ├── Run_Guide_AR.docx
 │   ├── Run_Guide_AR.pdf
 │   ├── Code_Explanation_AR.docx
-│   └── Code_Explanation_AR.pdf
+│   ├── Code_Explanation_AR.pdf
+│   ├── Presentation_and_Run_Guide_AR.docx
+│   └── Presentation_and_Run_Guide_AR.pdf
 ├── output/
 │   └── Sample_Output.txt
 ├── CMakeLists.txt
 ├── run_linux.sh
 ├── run_windows.bat
+├── START_DEMO_WINDOWS.bat
 └── README.md
 ```
 
