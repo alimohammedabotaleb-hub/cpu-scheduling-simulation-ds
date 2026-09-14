@@ -1,0 +1,59 @@
+name: Run CPU Scheduling Project
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-run:
+    name: Build and run on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Get project files
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure C++17 build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build the simulator
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Run and verify the built-in sample
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            simulator="build/Release/CPU_Scheduling_Simulator.exe"
+          else
+            simulator="build/CPU_Scheduling_Simulator"
+          fi
+          python scripts/verify_output.py "$simulator"
+          cp "$simulator" artifacts/
+          {
+            printf '## CPU Scheduling Simulator\n\n'
+            printf 'Built and executed the original C++17 source on %s.\n\n' "$RUNNER_OS"
+            printf 'The results match output/Sample_Output.txt.\n\n'
+            printf '<details open><summary>Execution results</summary>\n\n'
+            printf '```text\n'
+            cat artifacts/Run_Output.txt
+            printf '\n```\n</details>\n'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Download executable and results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: CPU-Scheduling-${{ runner.os }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30

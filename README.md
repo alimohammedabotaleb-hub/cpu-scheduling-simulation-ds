@@ -4,6 +4,24 @@
 
 **رابط المستودع:** https://github.com/alimohammedabotaleb-hub/cpu-scheduling-simulation-ds
 
+## تشغيل المشروع داخل GitHub
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/alimohammedabotaleb-hub/cpu-scheduling-simulation-ds?quickstart=1)
+
+[![Build and run](https://github.com/alimohammedabotaleb-hub/cpu-scheduling-simulation-ds/actions/workflows/run-project.yml/badge.svg)](https://github.com/alimohammedabotaleb-hub/cpu-scheduling-simulation-ds/actions/workflows/run-project.yml)
+
+افتح Codespaces من الزر أعلاه، ثم أنشئ البيئة أو استأنف البيئة الموجودة. بعد فتح المحرر، شغّل المشروع من الطرفية بالأمر:
+
+```bash
+bash run_github.sh
+```
+
+يمكن أيضًا الضغط على `Ctrl+Shift+B` داخل المحرر. لا تحتاج إلى إدخال عمليات؛ تظهر نتائج الخوارزميات الأربع مباشرة، وتُحفظ في `output/Live_Output.txt`.
+
+يتولى GitHub Actions تجميع الكود وتشغيله على Linux وWindows والتحقق من مطابقته لنتائج العينة المرجعية، ويتيح تنزيل الملف التنفيذي والنتائج. افتح شارة التشغيل أعلاه لعرض النتائج أو اختر `Run workflow` لإعادة التنفيذ.
+
+الخطوات التفصيلية: [دليل التشغيل داخل GitHub](docs/GitHub_Run_Guide_AR.md). تتطلب Codespaces تسجيل الدخول وتوفر الحصة في الحساب.
+
 ## بيانات المشروع
 
 - إعداد: مؤمن عبدالله الشامي
@@ -78,6 +96,10 @@ cmake --build build
 
 ```text
 cpu-scheduling-simulation-ds/
+├── .devcontainer/devcontainer.json
+├── .github/workflows/run-project.yml
+├── .vscode/tasks.json
+├── scripts/verify_output.py
 ├── src/
 │   └── CPU_Scheduling_Simulator.cpp
 ├── docs/
@@ -88,11 +110,13 @@ cpu-scheduling-simulation-ds/
 │   ├── Code_Explanation_AR.docx
 │   ├── Code_Explanation_AR.pdf
 │   ├── Presentation_and_Run_Guide_AR.docx
-│   └── Presentation_and_Run_Guide_AR.pdf
+│   ├── Presentation_and_Run_Guide_AR.pdf
+│   └── GitHub_Run_Guide_AR.md
 ├── output/
 │   └── Sample_Output.txt
 ├── CMakeLists.txt
 ├── run_linux.sh
+├── run_github.sh
 ├── run_windows.bat
 ├── START_DEMO_WINDOWS.bat
 └── README.md

@@ -1,5 +1,7 @@
 # Build products
 build/
+artifacts/
+output/Live_Output.txt
 bin/
 obj/
 *.o
@@ -8,7 +10,8 @@ obj/
 CPU_Scheduling_Simulator
 
 # IDE files
-.vscode/
+.vscode/*
+!.vscode/tasks.json
 .idea/
 *.user
 *.suo
