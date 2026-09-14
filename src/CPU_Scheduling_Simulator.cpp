@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <climits>
 #include <iomanip>
 #include <iostream>
 #include <stdexcept>
@@ -242,18 +243,41 @@ void buildArrivalOrder(const Process processes[], int processCount, int order[])
         order[i] = i;
     }
 
-    // Stable selection by arrival time, then by the original array position.
-    for (int i = 0; i < processCount - 1; ++i) {
-        int earliest = i;
-        for (int j = i + 1; j < processCount; ++j) {
-            int left = order[j];
-            int right = order[earliest];
-            if (processes[left].arrivalTime < processes[right].arrivalTime ||
-                (processes[left].arrivalTime == processes[right].arrivalTime && left < right)) {
-                earliest = j;
+    // Sort process indices by arrival, preserving the input order for ties.
+    stable_sort(order, order + processCount, [&](int left, int right) {
+        if (processes[left].arrivalTime != processes[right].arrivalTime) {
+            return processes[left].arrivalTime < processes[right].arrivalTime;
+        }
+        return left < right;
+    });
+}
+
+void validateProcesses(const Process processes[], int processCount) {
+    if (processCount < 1 || processCount > MAX_PROCESSES) {
+        throw invalid_argument("Process count must be between 1 and " +
+                               to_string(MAX_PROCESSES) + ".");
+    }
+
+    long long totalBurst = 0;
+    long long latestArrival = 0;
+    for (int i = 0; i < processCount; ++i) {
+        if (processes[i].pid.empty()) {
+            throw invalid_argument("Process IDs must not be empty.");
+        }
+        for (int j = 0; j < i; ++j) {
+            if (processes[i].pid == processes[j].pid) {
+                throw invalid_argument("Process IDs must be unique.");
             }
         }
-        swap(order[i], order[earliest]);
+        if (processes[i].arrivalTime < 0 || processes[i].burstTime <= 0) {
+            throw invalid_argument("Arrival time must be nonnegative and burst time must be positive.");
+        }
+        totalBurst += processes[i].burstTime;
+        latestArrival = max(latestArrival,
+                            static_cast<long long>(processes[i].arrivalTime));
+    }
+    if (latestArrival + totalBurst > INT_MAX) {
+        throw invalid_argument("Process times exceed the supported integer range.");
     }
 }
 
@@ -286,6 +310,7 @@ void calculateFinalStatistics(ScheduleResult& result,
 }
 
 ScheduleResult runFCFS(const Process processes[], int processCount) {
+    validateProcesses(processes, processCount);
     ScheduleResult result;
     result.algorithm = "FCFS";
 
@@ -323,6 +348,7 @@ ScheduleResult runFCFS(const Process processes[], int processCount) {
 }
 
 ScheduleResult runSJF(const Process processes[], int processCount) {
+    validateProcesses(processes, processCount);
     ScheduleResult result;
     result.algorithm = "SJF (Non-Preemptive)";
 
@@ -364,6 +390,7 @@ ScheduleResult runSJF(const Process processes[], int processCount) {
 }
 
 ScheduleResult runPriority(const Process processes[], int processCount) {
+    validateProcesses(processes, processCount);
     ScheduleResult result;
     result.algorithm = "Priority (Non-Preemptive)";
 
@@ -407,6 +434,7 @@ ScheduleResult runPriority(const Process processes[], int processCount) {
 ScheduleResult runRoundRobin(const Process processes[],
                              int processCount,
                              int timeQuantum) {
+    validateProcesses(processes, processCount);
     if (timeQuantum <= 0) {
         throw invalid_argument("Time quantum must be greater than zero.");
     }
@@ -465,7 +493,7 @@ ScheduleResult runRoundRobin(const Process processes[],
 }
 
 void printProcesses(const Process processes[], int processCount, int timeQuantum) {
-    cout << "CPU SCHEDULING SIMULATOR USING DATA STRUCTURES\n";
+    cout << "CPU Scheduling Algorithms Simulation Using Data Structures\n";
     cout << "================================================\n";
     cout << "The program runs automatically using the built-in sample.\n";
     cout << "Priority rule: a smaller number means a higher priority.\n";
@@ -611,46 +639,94 @@ void printComparison(const ScheduleResult results[], int resultCount) {
         }
     }
 
-    cout << "\nLowest average waiting time    : "
-         << results[bestWaitingIndex].algorithm << '\n';
-    cout << "Lowest average turnaround time : "
-         << results[bestTurnaroundIndex].algorithm << '\n';
-    cout << "Note: utilization is equal here because context-switch cost is zero "
-            "and all algorithms have the same initial idle interval.\n";
+    cout << "\nLowest average waiting time    : ";
+    bool first = true;
+    for (int i = 0; i < resultCount; ++i) {
+        if (results[i].averageWaitingTime == results[bestWaitingIndex].averageWaitingTime) {
+            if (!first) {
+                cout << ", ";
+            }
+            cout << results[i].algorithm;
+            first = false;
+        }
+    }
+    cout << "\nLowest average turnaround time : ";
+    first = true;
+    for (int i = 0; i < resultCount; ++i) {
+        if (results[i].averageTurnaroundTime == results[bestTurnaroundIndex].averageTurnaroundTime) {
+            if (!first) {
+                cout << ", ";
+            }
+            cout << results[i].algorithm;
+            first = false;
+        }
+    }
+    cout << "\nNote: utilization is equal for these work-conserving schedules "
+            "with zero context-switch cost and the same process workload.\n";
 }
 
-int main() {
-    // Built-in sample: no keyboard input is required.
-    Process sample[] = {
-        {"P1", 2, 5, 3},
-        {"P2", 3, 2, 1},
-        {"P3", 4, 8, 4},
-        {"P4", 5, 3, 2},
-        {"P5", 7, 4, 1}
-    };
-    const int sampleSize = static_cast<int>(sizeof(sample) / sizeof(sample[0]));
-    const int timeQuantum = 2;
-
-    ProcessLinkedList processList;
-    for (int i = 0; i < sampleSize; ++i) {
-        processList.append(sample[i]);
+int main(int argc, char* argv[]) {
+    const string usage =
+        "Usage: cpu_scheduler [--compare | --help]\n"
+        "  No arguments: run the three-process assignment sample.\n"
+        "  --compare: run a five-process comparison sample.\n"
+        "  --help: show these instructions.\n";
+    bool comparisonSample = false;
+    if (argc == 2 && string(argv[1]) == "--help") {
+        cout << usage;
+        return 0;
+    }
+    if (argc == 2 && string(argv[1]) == "--compare") {
+        comparisonSample = true;
+    } else if (argc != 1) {
+        cerr << usage;
+        return 2;
     }
 
-    Process processes[MAX_PROCESSES];
-    int processCount = processList.copyToArray(processes, MAX_PROCESSES);
+    try {
+        // Both samples are built in; no keyboard input is required.
+        const Process assignmentSample[] = {
+            {"P1", 0, 5, 2},
+            {"P2", 1, 3, 1},
+            {"P3", 2, 8, 3}
+        };
+        const Process extendedSample[] = {
+            {"P1", 2, 5, 3},
+            {"P2", 3, 2, 1},
+            {"P3", 4, 8, 4},
+            {"P4", 5, 3, 2},
+            {"P5", 7, 4, 1}
+        };
+        const Process* sample = comparisonSample ? extendedSample : assignmentSample;
+        const int sampleSize = comparisonSample
+            ? static_cast<int>(sizeof(extendedSample) / sizeof(extendedSample[0]))
+            : static_cast<int>(sizeof(assignmentSample) / sizeof(assignmentSample[0]));
+        const int timeQuantum = 2;
 
-    printProcesses(processes, processCount, timeQuantum);
+        ProcessLinkedList processList;
+        for (int i = 0; i < sampleSize; ++i) {
+            processList.append(sample[i]);
+        }
 
-    ScheduleResult results[4];
-    results[0] = runFCFS(processes, processCount);
-    results[1] = runSJF(processes, processCount);
-    results[2] = runPriority(processes, processCount);
-    results[3] = runRoundRobin(processes, processCount, timeQuantum);
+        Process processes[MAX_PROCESSES];
+        int processCount = processList.copyToArray(processes, MAX_PROCESSES);
 
-    for (const ScheduleResult& result : results) {
-        printResult(result, processes, processCount);
+        printProcesses(processes, processCount, timeQuantum);
+
+        ScheduleResult results[4];
+        results[0] = runFCFS(processes, processCount);
+        results[1] = runSJF(processes, processCount);
+        results[2] = runPriority(processes, processCount);
+        results[3] = runRoundRobin(processes, processCount, timeQuantum);
+
+        for (const ScheduleResult& result : results) {
+            printResult(result, processes, processCount);
+        }
+        printComparison(results, 4);
+
+        return 0;
+    } catch (const exception& error) {
+        cerr << "Error: " << error.what() << '\n';
+        return 1;
     }
-    printComparison(results, 4);
-
-    return 0;
 }

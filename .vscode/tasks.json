@@ -15,6 +15,15 @@
         "clear": true
       },
       "problemMatcher": ["$gcc"]
+    },
+    {
+      "label": "Run additional comparison sample",
+      "type": "shell",
+      "command": "bash",
+      "args": ["run_github.sh", "--compare"],
+      "options": {"cwd": "${workspaceFolder}"},
+      "presentation": {"reveal": "always", "focus": true, "panel": "dedicated", "clear": true},
+      "problemMatcher": ["$gcc"]
     }
   ]
 }

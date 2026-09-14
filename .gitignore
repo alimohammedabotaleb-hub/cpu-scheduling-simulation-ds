@@ -1,21 +1,6 @@
-# Build products
 build/
 artifacts/
-output/Live_Output.txt
-bin/
-obj/
 *.o
 *.obj
 *.exe
 CPU_Scheduling_Simulator
-
-# IDE files
-.vscode/*
-!.vscode/tasks.json
-.idea/
-*.user
-*.suo
-
-# Operating-system files
-.DS_Store
-Thumbs.db
