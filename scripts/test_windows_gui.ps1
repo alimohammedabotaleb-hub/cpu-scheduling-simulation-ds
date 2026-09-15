@@ -165,7 +165,8 @@ try {
     Check-Console "Assignment" @('--console') @(3.33,3.33,3.33,6.00) @(8.67,8.67,8.67,11.33) 100.00
     Check-Console "Comparison" @('--console','--compare') @(6.80,5.00,5.20,8.40) @(11.20,9.40,9.60,12.80) 91.67
     $process = Start-Process -FilePath $Executable -PassThru
-    [void]$process.WaitForInputIdle(15000)
+    # This executable supports both console and GUI startup. Poll its actual
+    # window instead of WaitForInputIdle, which rejects console-subsystem EXEs.
     $window = [IntPtr]::Zero
     for ($attempt = 0; $attempt -lt 100; $attempt++) {
         $process.Refresh()
