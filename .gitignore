@@ -1,6 +1,6 @@
 build/
-artifacts/
+*.exe
 *.o
 *.obj
-*.exe
-CPU_Scheduling_Simulator
+*.pdb
+*.ilk

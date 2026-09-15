@@ -2,8 +2,17 @@
 #include <climits>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace std;
 
@@ -665,68 +674,544 @@ void printComparison(const ScheduleResult results[], int resultCount) {
             "with zero context-switch cost and the same process workload.\n";
 }
 
+// Shared sample loading and execution for the console and desktop interface.
+int loadSample(bool comparison, Process destination[], int capacity) {
+    const Process assignmentSample[] = {
+        {"P1", 0, 5, 2}, {"P2", 1, 3, 1}, {"P3", 2, 8, 3}
+    };
+    const Process comparisonSample[] = {
+        {"P1", 2, 5, 3}, {"P2", 3, 2, 1}, {"P3", 4, 8, 4},
+        {"P4", 5, 3, 2}, {"P5", 7, 4, 1}
+    };
+    const Process* sample = comparison ? comparisonSample : assignmentSample;
+    const int count = comparison ? 5 : 3;
+    ProcessLinkedList processList;
+    for (int i = 0; i < count; ++i) {
+        processList.append(sample[i]);
+    }
+    return processList.copyToArray(destination, capacity);
+}
+
+void runAllAlgorithms(const Process processes[], int count, int quantum,
+                      ScheduleResult results[4]) {
+    results[0] = runFCFS(processes, count);
+    results[1] = runSJF(processes, count);
+    results[2] = runPriority(processes, count);
+    results[3] = runRoundRobin(processes, count, quantum);
+}
+
+#ifdef _WIN32
+// Native Windows presentation: all displayed values come from the core above.
+enum GuiControlId {
+    ID_SAMPLE = 101, ID_ALGORITHM, ID_QUANTUM, ID_RUN_ALL,
+    ID_NEXT_STEP, ID_RESET_REPLAY
+};
+
+struct GuiState {
+    Process processes[MAX_PROCESSES];
+    ScheduleResult results[4];
+    int processCount = 0;
+    int algorithmIndex = 0;
+    int quantum = 2;
+    int replayStep = 0;
+    bool comparison = false;
+    HWND sampleControl = nullptr;
+    HWND algorithmControl = nullptr;
+    HWND quantumControl = nullptr;
+    HWND nextControl = nullptr;
+    HFONT bodyFont = nullptr;
+    HFONT smallFont = nullptr;
+    HFONT headingFont = nullptr;
+    HFONT titleFont = nullptr;
+
+    ~GuiState() {
+        DeleteObject(bodyFont);
+        DeleteObject(smallFont);
+        DeleteObject(headingFont);
+        DeleteObject(titleFont);
+    }
+};
+
+const COLORREF GUI_NAVY = RGB(24, 44, 73);
+const COLORREF GUI_TEXT = RGB(29, 43, 61);
+const COLORREF GUI_MUTED = RGB(83, 99, 119);
+const COLORREF GUI_BACKGROUND = RGB(242, 245, 249);
+
+wstring wideText(const string& text) {
+    // Process identifiers and console labels are ASCII in both built-in samples.
+    return wstring(text.begin(), text.end());
+}
+
+wstring decimalText(double value) {
+    wostringstream text;
+    text << fixed << setprecision(2) << value;
+    return text.str();
+}
+
+HFONT createGuiFont(int height, int weight = FW_NORMAL) {
+    return CreateFontW(-height, 0, 0, 0, weight, FALSE, FALSE, FALSE,
+                       DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                       CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+}
+
+void fillArea(HDC dc, const RECT& area, COLORREF color) {
+    HBRUSH brush = CreateSolidBrush(color);
+    FillRect(dc, &area, brush);
+    DeleteObject(brush);
+}
+
+void drawGuiText(HDC dc, const wstring& text, RECT area, HFONT font,
+                 COLORREF color = GUI_TEXT,
+                 UINT format = DT_LEFT | DT_VCENTER | DT_SINGLELINE) {
+    HGDIOBJ oldFont = SelectObject(dc, font);
+    SetTextColor(dc, color);
+    SetBkMode(dc, TRANSPARENT);
+    DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &area,
+              format | DT_NOPREFIX);
+    SelectObject(dc, oldFont);
+}
+
+void drawTableCell(HDC dc, const wstring& text, int x, int y, int width,
+                   int height, HFONT font, bool leftAligned = false,
+                   COLORREF color = GUI_TEXT) {
+    drawGuiText(dc, text, {x + 5, y, x + width - 5, y + height}, font, color,
+                DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS |
+                (leftAligned ? DT_LEFT : DT_CENTER));
+}
+
+COLORREF processColor(const string& pid) {
+    const COLORREF colors[] = {
+        RGB(33, 102, 172), RGB(21, 124, 107), RGB(123, 78, 163),
+        RGB(167, 96, 28), RGB(174, 64, 93)
+    };
+    if (pid == "IDLE") {
+        return RGB(126, 136, 149);
+    }
+    if (pid.size() == 2 && pid[1] >= '1' && pid[1] <= '5') {
+        return colors[pid[1] - '1'];
+    }
+    return GUI_NAVY;
+}
+
+wstring executionText(const ScheduleResult& result, bool reverse) {
+    wstring text;
+    if (reverse) {
+        // The same explicit stack used in the console also supplies this view.
+        auto history = make_unique<SegmentStack>();
+        for (int i = 0; i < result.segmentCount; ++i) {
+            if (result.gantt[i].label != "IDLE") {
+                history->push(result.gantt[i]);
+            }
+        }
+        while (!history->empty()) {
+            if (!text.empty()) text += L" \u2192 ";
+            text += wideText(history->pop().label);
+        }
+    } else {
+        for (int i = 0; i < result.segmentCount; ++i) {
+            if (result.gantt[i].label == "IDLE") continue;
+            if (!text.empty()) text += L" \u2192 ";
+            text += wideText(result.gantt[i].label);
+        }
+    }
+    return text;
+}
+
+void refreshGuiResults(HWND window, GuiState& state) {
+    state.comparison = SendMessageW(state.sampleControl, CB_GETCURSEL, 0, 0) == 1;
+    state.quantum = static_cast<int>(SendMessageW(state.quantumControl,
+                                                  CB_GETCURSEL, 0, 0)) + 1;
+    state.processCount = loadSample(state.comparison, state.processes, MAX_PROCESSES);
+    runAllAlgorithms(state.processes, state.processCount, state.quantum, state.results);
+    state.replayStep = 0;
+    EnableWindow(state.nextControl, TRUE);
+    InvalidateRect(window, nullptr, FALSE);
+}
+
+HWND addGuiControl(HWND window, const wchar_t* className, const wchar_t* label,
+                    DWORD style, int id, int x, int width, HFONT font) {
+    HWND control = CreateWindowExW(0, className, label,
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | style, x, 120, width,
+        (style & CBS_DROPDOWNLIST) == CBS_DROPDOWNLIST ? 220 : 32,
+        window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+        GetModuleHandleW(nullptr), nullptr);
+    if (!control) throw runtime_error("Could not create a desktop control.");
+    SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    return control;
+}
+
+void createGuiControls(HWND window, GuiState& state) {
+    state.bodyFont = createGuiFont(16);
+    state.smallFont = createGuiFont(13);
+    state.headingFont = createGuiFont(18, FW_SEMIBOLD);
+    state.titleFont = createGuiFont(26, FW_SEMIBOLD);
+    const DWORD comboStyle = CBS_DROPDOWNLIST | WS_VSCROLL;
+    state.sampleControl = addGuiControl(window, L"COMBOBOX", L"", comboStyle,
+                                         ID_SAMPLE, 24, 226, state.bodyFont);
+    SendMessageW(state.sampleControl, CB_ADDSTRING, 0,
+                 reinterpret_cast<LPARAM>(L"Assignment (3 processes)"));
+    SendMessageW(state.sampleControl, CB_ADDSTRING, 0,
+                 reinterpret_cast<LPARAM>(L"Comparison (5 processes)"));
+    SendMessageW(state.sampleControl, CB_SETCURSEL, state.comparison ? 1 : 0, 0);
+
+    state.algorithmControl = addGuiControl(window, L"COMBOBOX", L"", comboStyle,
+                                            ID_ALGORITHM, 264, 162, state.bodyFont);
+    for (const wchar_t* name : {L"FCFS", L"SJF", L"Priority", L"Round Robin"}) {
+        SendMessageW(state.algorithmControl, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(name));
+    }
+    SendMessageW(state.algorithmControl, CB_SETCURSEL, 0, 0);
+    state.quantumControl = addGuiControl(window, L"COMBOBOX", L"", comboStyle,
+                                          ID_QUANTUM, 440, 60, state.bodyFont);
+    for (int quantum = 1; quantum <= 5; ++quantum) {
+        wstring value = to_wstring(quantum);
+        SendMessageW(state.quantumControl, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(value.c_str()));
+    }
+    SendMessageW(state.quantumControl, CB_SETCURSEL, 1, 0);
+    addGuiControl(window, L"BUTTON", L"Run all", BS_PUSHBUTTON,
+                   ID_RUN_ALL, 514, 116, state.bodyFont);
+    state.nextControl = addGuiControl(window, L"BUTTON", L"Next step", BS_PUSHBUTTON,
+                                       ID_NEXT_STEP, 644, 126, state.bodyFont);
+    addGuiControl(window, L"BUTTON", L"Reset replay", BS_PUSHBUTTON,
+                   ID_RESET_REPLAY, 784, 122, state.bodyFont);
+    refreshGuiResults(window, state);
+}
+
+void paintProcessTable(HDC dc, const GuiState& state, int right) {
+    const ScheduleResult& result = state.results[state.algorithmIndex];
+    fillArea(dc, {24, 205, right, 403}, RGB(255, 255, 255));
+    const int tableLeft = 34;
+    const int width = right - tableLeft - 10;
+    const int column = width / 7;
+    fillArea(dc, {tableLeft, 215, right - 10, 244}, RGB(229, 235, 243));
+    const wchar_t* headers[] = {L"PID", L"AT", L"BT", L"Priority", L"CT", L"WT", L"TAT"};
+    for (int c = 0; c < 7; ++c) {
+        drawTableCell(dc, headers[c], tableLeft + c * column, 215, column, 29,
+                      state.bodyFont);
+    }
+    for (int i = 0; i < state.processCount; ++i) {
+        const int y = 244 + i * 26;
+        if (i % 2 == 1) fillArea(dc, {tableLeft, y, right - 10, y + 26}, RGB(246, 248, 251));
+        const Process& process = state.processes[i];
+        const ProcessMetrics& metric = result.metrics[i];
+        const wstring values[] = {
+            wideText(process.pid), to_wstring(process.arrivalTime),
+            to_wstring(process.burstTime), to_wstring(process.priority),
+            to_wstring(metric.completionTime), to_wstring(metric.waitingTime),
+            to_wstring(metric.turnaroundTime)
+        };
+        for (int c = 0; c < 7; ++c) {
+            drawTableCell(dc, values[c], tableLeft + c * column, y, column, 26,
+                          state.bodyFont, false, c == 0 ? processColor(process.pid) : GUI_TEXT);
+        }
+    }
+    drawGuiText(dc, L"AT arrival  |  BT burst  |  CT completion  |  WT waiting  |  TAT turnaround",
+                {34, 379, right - 10, 397}, state.smallFont, GUI_MUTED);
+}
+
+void paintComparisonTable(HDC dc, const GuiState& state, int left, int right) {
+    fillArea(dc, {left, 205, right, 403}, RGB(255, 255, 255));
+    const int x = left + 10;
+    const int width = right - left - 20;
+    const int firstWidth = width * 36 / 100;
+    const int numberWidth = (width - firstWidth) / 3;
+    fillArea(dc, {x, 215, right - 10, 244}, RGB(229, 235, 243));
+    drawTableCell(dc, L"Algorithm", x, 215, firstWidth, 29, state.bodyFont, true);
+    const wchar_t* headers[] = {L"Avg WT", L"Avg TAT", L"CPU %"};
+    for (int c = 0; c < 3; ++c) {
+        drawTableCell(dc, headers[c], x + firstWidth + c * numberWidth, 215,
+                      numberWidth, 29, state.smallFont);
+    }
+    const wstring names[] = {L"FCFS", L"SJF", L"Priority", L"RR (q=" + to_wstring(state.quantum) + L")"};
+    for (int i = 0; i < 4; ++i) {
+        int y = 244 + i * 28;
+        if (i == state.algorithmIndex) {
+            fillArea(dc, {x, y, right - 10, y + 28}, RGB(222, 235, 249));
+        } else if (i % 2 == 1) {
+            fillArea(dc, {x, y, right - 10, y + 28}, RGB(246, 248, 251));
+        }
+        const ScheduleResult& result = state.results[i];
+        drawTableCell(dc, names[i], x, y, firstWidth, 28, state.bodyFont, true);
+        const wstring values[] = {decimalText(result.averageWaitingTime),
+                                  decimalText(result.averageTurnaroundTime),
+                                  decimalText(result.cpuUtilization)};
+        for (int c = 0; c < 3; ++c) {
+            drawTableCell(dc, values[c], x + firstWidth + c * numberWidth, y,
+                          numberWidth, 28, state.bodyFont);
+        }
+    }
+    drawGuiText(dc, state.comparison
+        ? L"Compare waiting times; utilization is equal for this workload."
+        : L"FCFS, SJF and Priority tie on the assignment sample.",
+        {x + 4, 363, right - 12, 397}, state.smallFont, GUI_MUTED, DT_LEFT | DT_WORDBREAK);
+}
+
+void paintGanttChart(HDC dc, const GuiState& state, int width) {
+    const ScheduleResult& result = state.results[state.algorithmIndex];
+    const int chartLeft = 34;
+    const int chartWidth = width - 68;
+    fillArea(dc, {24, 472, width - 24, 543}, RGB(255, 255, 255));
+    for (int i = 0; i < result.segmentCount; ++i) {
+        const GanttSegment& segment = result.gantt[i];
+        const int left = chartLeft + chartWidth * segment.startTime / result.totalTime;
+        const int right = chartLeft + chartWidth * segment.endTime / result.totalTime;
+        fillArea(dc, {left, 482, right - 1, 513}, processColor(segment.label));
+        drawGuiText(dc, wideText(segment.label), {left, 482, right - 1, 513},
+                    state.smallFont, RGB(255, 255, 255), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        if (state.replayStep == i + 1) {
+            HPEN pen = CreatePen(PS_SOLID, 3, RGB(232, 174, 41));
+            HGDIOBJ oldPen = SelectObject(dc, pen);
+            HGDIOBJ oldBrush = SelectObject(dc, GetStockObject(HOLLOW_BRUSH));
+            Rectangle(dc, left - 1, 480, right, 515);
+            SelectObject(dc, oldBrush);
+            SelectObject(dc, oldPen);
+            DeleteObject(pen);
+        }
+        drawGuiText(dc, to_wstring(segment.startTime), {left - 14, 516, left + 18, 538},
+                    state.smallFont, GUI_MUTED, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    drawGuiText(dc, to_wstring(result.totalTime),
+                {chartLeft + chartWidth - 18, 516, chartLeft + chartWidth + 14, 538},
+                state.smallFont, GUI_MUTED, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+void paintGui(HDC dc, const RECT& area, const GuiState& state) {
+    const int width = area.right;
+    const int tableRight = 24 + (width - 66) * 54 / 100;
+    const int comparisonLeft = tableRight + 18;
+    const ScheduleResult& result = state.results[state.algorithmIndex];
+    fillArea(dc, area, GUI_BACKGROUND);
+    fillArea(dc, {0, 0, width, 84}, GUI_NAVY);
+    drawGuiText(dc, L"CPU Scheduling Simulator", {24, 13, width - 24, 47},
+                state.titleFont, RGB(255, 255, 255));
+    drawGuiText(dc, L"C++  |  FCFS, SJF, Priority and Round Robin  |  Queue, Priority Queue, Linked List and Stack",
+                {25, 49, width - 24, 73}, state.smallFont, RGB(206, 222, 240));
+    drawGuiText(dc, L"Sample", {24, 96, 250, 116}, state.smallFont, GUI_MUTED);
+    drawGuiText(dc, L"Algorithm", {264, 96, 426, 116}, state.smallFont, GUI_MUTED);
+    drawGuiText(dc, L"RR quantum", {440, 96, 513, 116}, state.smallFont, GUI_MUTED);
+    drawGuiText(dc, L"Process results - " + wideText(result.algorithm),
+                {24, 171, tableRight, 198}, state.headingFont);
+    drawGuiText(dc, L"Performance comparison", {comparisonLeft, 171, width - 24, 198},
+                state.headingFont);
+    paintProcessTable(dc, state, tableRight);
+    paintComparisonTable(dc, state, comparisonLeft, width - 24);
+    const wchar_t* explanations[] = {
+        L"FCFS: ready processes execute in arrival order using a circular FIFO queue.",
+        L"SJF: a min-heap selects the shortest ready burst; the selected process finishes without preemption.",
+        L"Priority: a min-heap selects the smallest priority number; ties use arrival time, then input order.",
+        L"Round Robin: a circular queue gives each process a time slice; unfinished processes return to the rear."
+    };
+    drawGuiText(dc, explanations[state.algorithmIndex], {24, 413, width - 24, 439},
+                state.smallFont, GUI_MUTED);
+    drawGuiText(dc, L"Gantt chart - proportional logical time", {24, 445, width - 24, 470},
+                state.headingFont);
+    paintGanttChart(dc, state, width);
+    wstring replay;
+    if (state.replayStep == 0) {
+        replay = L"Replay ready. Next step highlights one execution slice; tables show the final results.";
+    } else {
+        const GanttSegment& segment = result.gantt[state.replayStep - 1];
+        replay = L"Step " + to_wstring(state.replayStep) + L" / " + to_wstring(result.segmentCount)
+            + L": " + wideText(segment.label) + L" runs from " + to_wstring(segment.startTime)
+            + L" to " + to_wstring(segment.endTime) + L" (" + to_wstring(segment.endTime - segment.startTime)
+            + L" time units).";
+    }
+    drawGuiText(dc, replay, {24, 551, width - 24, 576}, state.bodyFont);
+    drawGuiText(dc, L"Execution order", {24, 584, 204, 608}, state.smallFont, GUI_MUTED);
+    drawGuiText(dc, executionText(result, false), {204, 584, width - 24, 608}, state.smallFont);
+    drawGuiText(dc, L"Stack: latest first", {24, 614, 204, 638}, state.smallFont, GUI_MUTED);
+    drawGuiText(dc, executionText(result, true), {204, 614, width - 24, 638}, state.smallFont);
+    drawGuiText(dc,
+        L"WT = CT - AT - BT    |    TAT = CT - AT    |    Single CPU, no I/O, zero context-switch cost    |    Built-in samples",
+        {24, area.bottom - 31, width - 24, area.bottom - 10}, state.smallFont, GUI_MUTED);
+}
+
+LRESULT CALLBACK guiWindowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    GuiState* state = reinterpret_cast<GuiState*>(GetWindowLongPtrW(window, GWLP_USERDATA));
+    try {
+        switch (message) {
+        case WM_NCCREATE: {
+            auto creation = reinterpret_cast<CREATESTRUCTW*>(lParam);
+            state = static_cast<GuiState*>(creation->lpCreateParams);
+            SetWindowLongPtrW(window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(state));
+            return TRUE;
+        }
+        case WM_CREATE:
+            createGuiControls(window, *state);
+            return 0;
+        case WM_GETMINMAXINFO: {
+            auto limits = reinterpret_cast<MINMAXINFO*>(lParam);
+            RECT minimum = {0, 0, 960, 680};
+            AdjustWindowRect(&minimum, WS_OVERLAPPEDWINDOW, FALSE);
+            limits->ptMinTrackSize = {minimum.right - minimum.left, minimum.bottom - minimum.top};
+            return 0;
+        }
+        case WM_COMMAND: {
+            const int id = LOWORD(wParam);
+            const int action = HIWORD(wParam);
+            if ((id == ID_SAMPLE || id == ID_QUANTUM) && action == CBN_SELCHANGE) {
+                refreshGuiResults(window, *state);
+            } else if (id == ID_ALGORITHM && action == CBN_SELCHANGE) {
+                state->algorithmIndex = static_cast<int>(SendMessageW(state->algorithmControl,
+                                                                        CB_GETCURSEL, 0, 0));
+                state->replayStep = 0;
+                EnableWindow(state->nextControl, TRUE);
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (id == ID_RUN_ALL && action == BN_CLICKED) {
+                refreshGuiResults(window, *state);
+            } else if (id == ID_NEXT_STEP && action == BN_CLICKED) {
+                const int count = state->results[state->algorithmIndex].segmentCount;
+                if (state->replayStep < count) ++state->replayStep;
+                EnableWindow(state->nextControl, state->replayStep < count);
+                InvalidateRect(window, nullptr, FALSE);
+            } else if (id == ID_RESET_REPLAY && action == BN_CLICKED) {
+                state->replayStep = 0;
+                EnableWindow(state->nextControl, TRUE);
+                InvalidateRect(window, nullptr, FALSE);
+            }
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_SIZE:
+            InvalidateRect(window, nullptr, FALSE);
+            return 0;
+        case WM_PRINTCLIENT: {
+            RECT area;
+            GetClientRect(window, &area);
+            paintGui(reinterpret_cast<HDC>(wParam), area, *state);
+            return 0;
+        }
+        case WM_PAINT: {
+            PAINTSTRUCT paint;
+            HDC dc = BeginPaint(window, &paint);
+            RECT area;
+            GetClientRect(window, &area);
+            // Paint into a back buffer so replay and selection changes do not flicker.
+            HDC buffer = CreateCompatibleDC(dc);
+            HBITMAP bitmap = CreateCompatibleBitmap(dc, area.right, area.bottom);
+            HGDIOBJ oldBitmap = SelectObject(buffer, bitmap);
+            paintGui(buffer, area, *state);
+            BitBlt(dc, 0, 0, area.right, area.bottom, buffer, 0, 0, SRCCOPY);
+            SelectObject(buffer, oldBitmap);
+            DeleteObject(bitmap);
+            DeleteDC(buffer);
+            EndPaint(window, &paint);
+            return 0;
+        }
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return 0;
+        }
+    } catch (const exception& error) {
+        const wstring text = wideText(error.what());
+        MessageBoxW(window, text.c_str(), L"CPU Scheduling Simulator", MB_OK | MB_ICONERROR);
+        if (message == WM_CREATE) return -1;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+int runDesktopGui(bool comparison) {
+    // Keep the large result/segment arrays on the heap, away from the Windows stack.
+    auto state = make_unique<GuiState>();
+    state->comparison = comparison;
+    HINSTANCE instance = GetModuleHandleW(nullptr);
+    const wchar_t* className = L"CpuSchedulingSimulatorWindow";
+    WNDCLASSEXW windowClass{};
+    windowClass.cbSize = sizeof(windowClass);
+    windowClass.lpfnWndProc = guiWindowProcedure;
+    windowClass.hInstance = instance;
+    windowClass.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
+    windowClass.hIcon = LoadIconW(nullptr, MAKEINTRESOURCEW(32512));
+    windowClass.lpszClassName = className;
+    if (!RegisterClassExW(&windowClass)) {
+        throw runtime_error("Could not register the desktop window.");
+    }
+    RECT size = {0, 0, 1100, 680};
+    AdjustWindowRect(&size, WS_OVERLAPPEDWINDOW, FALSE);
+    HWND window = CreateWindowExW(0, className,
+        L"CPU Scheduling Algorithms Simulation Using Data Structures",
+        WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
+        size.right - size.left, size.bottom - size.top, nullptr, nullptr, instance, state.get());
+    if (!window) throw runtime_error("Could not open the desktop window.");
+    ShowWindow(window, SW_SHOW);
+    UpdateWindow(window);
+    MSG message{};
+    int received;
+    while ((received = static_cast<int>(GetMessageW(&message, nullptr, 0, 0))) > 0) {
+        if (!IsDialogMessageW(window, &message)) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }
+    UnregisterClassW(className, instance);
+    if (received == -1) throw runtime_error("The desktop message loop failed.");
+    return static_cast<int>(message.wParam);
+}
+#endif
+
 int main(int argc, char* argv[]) {
     const string usage =
-        "Usage: cpu_scheduler [--compare | --help]\n"
-        "  No arguments: run the three-process assignment sample.\n"
-        "  --compare: run a five-process comparison sample.\n"
+        "Usage: cpu_scheduler [--console] [--compare] [--gui] [--help]\n"
+        "  No arguments: Windows desktop GUI; console on other platforms.\n"
+        "  --console: run the three-process assignment sample in the console.\n"
+        "  --compare: run the five-process comparison sample in the console.\n"
+        "  --gui: open the Windows GUI (may be combined with --compare).\n"
         "  --help: show these instructions.\n";
     bool comparisonSample = false;
-    if (argc == 2 && string(argv[1]) == "--help") {
-        cout << usage;
-        return 0;
+    bool consoleRequested = false;
+    bool guiRequested = false;
+    for (int i = 1; i < argc; ++i) {
+        const string argument = argv[i];
+        if (argument == "--help") {
+            cout << usage;
+            return 0;
+        }
+        if (argument == "--compare") comparisonSample = true;
+        else if (argument == "--console") consoleRequested = true;
+        else if (argument == "--gui") guiRequested = true;
+        else {
+            cerr << usage;
+            return 2;
+        }
     }
-    if (argc == 2 && string(argv[1]) == "--compare") {
-        comparisonSample = true;
-    } else if (argc != 1) {
-        cerr << usage;
+    if (guiRequested && consoleRequested) {
+        cerr << "Choose either --gui or --console.\n" << usage;
         return 2;
     }
-
     try {
-        // Both samples are built in; no keyboard input is required.
-        const Process assignmentSample[] = {
-            {"P1", 0, 5, 2},
-            {"P2", 1, 3, 1},
-            {"P3", 2, 8, 3}
-        };
-        const Process extendedSample[] = {
-            {"P1", 2, 5, 3},
-            {"P2", 3, 2, 1},
-            {"P3", 4, 8, 4},
-            {"P4", 5, 3, 2},
-            {"P5", 7, 4, 1}
-        };
-        const Process* sample = comparisonSample ? extendedSample : assignmentSample;
-        const int sampleSize = comparisonSample
-            ? static_cast<int>(sizeof(extendedSample) / sizeof(extendedSample[0]))
-            : static_cast<int>(sizeof(assignmentSample) / sizeof(assignmentSample[0]));
-        const int timeQuantum = 2;
-
-        ProcessLinkedList processList;
-        for (int i = 0; i < sampleSize; ++i) {
-            processList.append(sample[i]);
+#ifdef _WIN32
+        if (guiRequested || (!consoleRequested && !comparisonSample)) {
+            // Detach this program from the console; do not hide the user's terminal.
+            FreeConsole();
+            return runDesktopGui(comparisonSample);
         }
-
+#else
+        if (guiRequested) {
+            cerr << "The desktop GUI requires Windows. Use --console on this platform.\n";
+            return 2;
+        }
+#endif
         Process processes[MAX_PROCESSES];
-        int processCount = processList.copyToArray(processes, MAX_PROCESSES);
-
-        printProcesses(processes, processCount, timeQuantum);
-
-        ScheduleResult results[4];
-        results[0] = runFCFS(processes, processCount);
-        results[1] = runSJF(processes, processCount);
-        results[2] = runPriority(processes, processCount);
-        results[3] = runRoundRobin(processes, processCount, timeQuantum);
-
-        for (const ScheduleResult& result : results) {
-            printResult(result, processes, processCount);
-        }
-        printComparison(results, 4);
-
+        const int count = loadSample(comparisonSample, processes, MAX_PROCESSES);
+        const int quantum = 2;
+        auto results = make_unique<ScheduleResult[]>(4);
+        runAllAlgorithms(processes, count, quantum, results.get());
+        printProcesses(processes, count, quantum);
+        for (int i = 0; i < 4; ++i) printResult(results[i], processes, count);
+        printComparison(results.get(), 4);
         return 0;
     } catch (const exception& error) {
-        cerr << "Error: " << error.what() << '\n';
+#ifdef _WIN32
+        if (guiRequested || (!consoleRequested && !comparisonSample)) {
+            const wstring text = wideText(error.what());
+            MessageBoxW(nullptr, text.c_str(), L"CPU Scheduling Simulator", MB_OK | MB_ICONERROR);
+        } else
+#endif
+        {
+            cerr << "Error: " << error.what() << '\n';
+        }
         return 1;
     }
 }
