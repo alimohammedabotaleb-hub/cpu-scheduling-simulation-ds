@@ -226,6 +226,7 @@ string formatResults(const vector<Process>& p, const vector<Result>& results,
 #ifdef _WIN32
 int selectedAlgorithm = FCFS;
 bool comparisonSample = false;
+HFONT resultFont = nullptr;
 
 // Each button displays results from the same scheduling function.
 void showResults(HWND window) {
@@ -255,7 +256,9 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         HWND output = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE |
             WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL,
             12, 52, 950, 550, window, reinterpret_cast<HMENU>(106), nullptr, nullptr);
-        SendMessageA(output, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(SYSTEM_FIXED_FONT)), TRUE);
+        resultFont = CreateFontA(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH, "Consolas");
+        SendMessageA(output, WM_SETFONT, reinterpret_cast<WPARAM>(resultFont), TRUE);
         showResults(window);
         return 0;
     }
@@ -273,6 +276,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         reinterpret_cast<MINMAXINFO*>(lParam)->ptMinTrackSize = {800, 500};
         return 0;
     case WM_DESTROY:
+        DeleteObject(resultFont);
         PostQuitMessage(0);
         return 0;
     }
