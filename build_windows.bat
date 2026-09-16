@@ -31,3 +31,4 @@ exit /b 0
 echo Build failed. Read the compiler messages above.
 pause
 exit /b 1
+

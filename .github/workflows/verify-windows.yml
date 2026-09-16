@@ -1,0 +1,47 @@
+name: Verify compact Windows program
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'ci/windows-smoke.ps1'
+      - '.github/workflows/verify-windows.yml'
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build Windows executable
+        shell: pwsh
+        run: |
+          $VsWhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $VisualStudio = & $VsWhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $VisualStudio) { throw 'The Visual C++ build tools were not found.' }
+          $DeveloperCommand = Join-Path $VisualStudio 'Common7\Tools\VsDevCmd.bat'
+          New-Item -ItemType Directory -Force build | Out-Null
+          $BuildCommand = 'call "' + $DeveloperCommand + '" -arch=x64 -host_arch=x64 && cl /nologo /std:c++17 /EHsc /W4 /WX /utf-8 /O2 /MT src\CPU_Scheduling_Simulator.cpp /Fe:build\CPU_Scheduling_Simulator.exe /Fo:build\ /link user32.lib gdi32.lib'
+          & cmd.exe /d /c $BuildCommand
+          if ($LASTEXITCODE -ne 0) { throw "MSVC build failed with exit code $LASTEXITCODE." }
+      - name: Verify console results
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          & .\build\CPU_Scheduling_Simulator.exe --console | Tee-Object artifacts\assignment-console.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Assignment execution failed.' }
+          & .\build\CPU_Scheduling_Simulator.exe --console --compare | Tee-Object artifacts\comparison-console.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Comparison execution failed.' }
+      - name: Verify native GUI and capture windows
+        shell: pwsh
+        run: .\ci\windows-smoke.ps1
+      - name: Keep verified program and evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: compact-windows-verification
+          path: |
+            build/CPU_Scheduling_Simulator.exe
+            artifacts/
+          retention-days: 7

@@ -20,3 +20,4 @@ else()
         target_link_options(CPU_Scheduling_Simulator PRIVATE -static -static-libgcc -static-libstdc++)
     endif()
 endif()
+
