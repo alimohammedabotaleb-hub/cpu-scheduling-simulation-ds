@@ -7,9 +7,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(CPU_Scheduling_Simulator src/CPU_Scheduling_Simulator.cpp)
 
-if(WIN32)
-    target_link_libraries(CPU_Scheduling_Simulator PRIVATE user32 gdi32)
-endif()
 if(MSVC)
     target_compile_options(CPU_Scheduling_Simulator PRIVATE /W4 /utf-8)
     set_property(TARGET CPU_Scheduling_Simulator PROPERTY

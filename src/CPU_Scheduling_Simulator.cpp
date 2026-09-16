@@ -1,8 +1,4 @@
 #include <iostream>
-#ifdef _WIN32
-#define NOMINMAX
-#include <windows.h>
-#endif
 
 #include <algorithm>
 #include <iomanip>
@@ -185,160 +181,58 @@ string formatResults(const vector<Process>& p, const vector<Result>& results,
     const Result& r = results.at(selected);
     ostringstream out;
     out << fixed << setprecision(2);
-    out << algorithmNames[selected] << "  |  RR quantum = " << quantum << "\r\n\r\n";
-    out << "PID    AT    BT   PRI    CT    WT   TAT\r\n";
+    out << algorithmNames[selected] << "  |  RR quantum = " << quantum << "\n\n";
+    out << "PID    AT    BT   PRI    CT    WT   TAT\n";
     for (size_t i = 0; i < p.size(); ++i) {
         int turnaround = r.completion[i] - p[i].arrival;
         out << left << setw(5) << p[i].id << right << setw(4) << p[i].arrival
             << setw(6) << p[i].burst << setw(6) << p[i].priority
             << setw(6) << r.completion[i] << setw(6) << turnaround - p[i].burst
-            << setw(6) << turnaround << "\r\n";
+            << setw(6) << turnaround << "\n";
     }
-    out << "\r\nAverage WT: " << r.avgWaiting << "   Average TAT: " << r.avgTurnaround
-        << "   CPU utilization: " << r.utilization << "%\r\n";
-    out << "\r\nExecution order / Gantt intervals:\r\n";
+    out << "\nAverage WT: " << r.avgWaiting << "   Average TAT: " << r.avgTurnaround
+        << "   CPU utilization: " << r.utilization << "%\n";
+    out << "\nExecution order / Gantt intervals:\n";
     Stack history;
     int shown = 0;
     for (const Slice& s : r.timeline) {
         out << (s.process < 0 ? "IDLE" : p[s.process].id)
             << "[" << s.start << "," << s.end << ")  ";
         history.push(s);
-        if (++shown % 6 == 0) out << "\r\n";
+        if (++shown % 6 == 0) out << "\n";
     }
-    out << "\r\n\r\nReverse history (Stack):\r\n";
+    out << "\n\nReverse history (Stack):\n";
     shown = 0;
     while (!history.empty()) {
         Slice s = history.pop();
         out << (s.process < 0 ? "IDLE" : p[s.process].id)
             << "[" << s.start << "," << s.end << ")  ";
-        if (++shown % 6 == 0) out << "\r\n";
+        if (++shown % 6 == 0) out << "\n";
     }
-    out << "\r\n\r\nComparison             Avg WT    Avg TAT    CPU %\r\n";
+    out << "\n\nComparison             Avg WT    Avg TAT    CPU %\n";
     for (int a = 0; a < 4; ++a)
         out << left << setw(20) << algorithmNames[a] << right
             << setw(9) << results.at(a).avgWaiting << setw(11) << results.at(a).avgTurnaround
-            << setw(9) << results.at(a).utilization << "\r\n";
-    out << "\r\nAT=Arrival  BT=Burst  PRI=Priority  CT=Completion\r\n"
-        << "WT=Waiting  TAT=Turnaround  Lower priority number runs first.\r\n";
+            << setw(9) << results.at(a).utilization << "\n";
+    out << "\nAT=Arrival  BT=Burst  PRI=Priority  CT=Completion\n"
+        << "WT=Waiting  TAT=Turnaround  Lower priority number runs first.\n";
     return out.str();
 }
 
-#ifdef _WIN32
-int selectedAlgorithm = FCFS;
-bool comparisonSample = false;
-HFONT resultFont = nullptr;
-
-// Each button displays results from the same scheduling function.
-void showResults(HWND window) {
-    bool comparison = IsDlgButtonChecked(window, 105) == BST_CHECKED;
-    vector<Process> processes = sample(comparison);
-    vector<Result> results;
-    for (int algorithm = 0; algorithm < 4; ++algorithm)
-        results.push_back(schedule(processes, algorithm, TIME_QUANTUM));
-    string text = formatResults(processes, results, selectedAlgorithm, TIME_QUANTUM);
-    SetDlgItemTextA(window, 106, text.c_str());
-}
-
-LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-    switch (message) {
-    case WM_CREATE: {
-        for (int i = 0; i < 4; ++i) {
-            HWND button = CreateWindowA("BUTTON", algorithmNames[i], WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-                12 + i * 130, 10, 120, 30, window,
-                reinterpret_cast<HMENU>(static_cast<INT_PTR>(101 + i)), nullptr, nullptr);
-            SendMessageA(button, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
-        }
-        HWND check = CreateWindowA("BUTTON", "Comparison sample", WS_CHILD | WS_VISIBLE |
-            WS_TABSTOP | BS_AUTOCHECKBOX, 550, 10, 200, 30, window,
-            reinterpret_cast<HMENU>(105), nullptr, nullptr);
-        SendMessageA(check, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
-        CheckDlgButton(window, 105, comparisonSample ? BST_CHECKED : BST_UNCHECKED);
-        HWND output = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "", WS_CHILD | WS_VISIBLE |
-            WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOHSCROLL,
-            12, 52, 950, 550, window, reinterpret_cast<HMENU>(106), nullptr, nullptr);
-        resultFont = CreateFontA(-18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FIXED_PITCH, "Consolas");
-        SendMessageA(output, WM_SETFONT, reinterpret_cast<WPARAM>(resultFont), TRUE);
-        showResults(window);
-        return 0;
-    }
-    case WM_COMMAND:
-        if (LOWORD(wParam) >= 101 && LOWORD(wParam) <= 104)
-            selectedAlgorithm = LOWORD(wParam) - 101;
-        if (LOWORD(wParam) >= 101 && LOWORD(wParam) <= 105)
-            showResults(window);
-        return 0;
-    case WM_SIZE:
-        if (wParam != SIZE_MINIMIZED)
-            MoveWindow(GetDlgItem(window, 106), 12, 52, LOWORD(lParam) - 24, HIWORD(lParam) - 64, TRUE);
-        return 0;
-    case WM_GETMINMAXINFO:
-        reinterpret_cast<MINMAXINFO*>(lParam)->ptMinTrackSize = {800, 500};
-        return 0;
-    case WM_DESTROY:
-        DeleteObject(resultFont);
-        PostQuitMessage(0);
-        return 0;
-    }
-    return DefWindowProcA(window, message, wParam, lParam);
-}
-
-int runWindow(bool comparison) {
-    FreeConsole();
-    comparisonSample = comparison;
-    WNDCLASSA type{};
-    type.lpfnWndProc = windowProcedure;
-    type.hInstance = GetModuleHandleA(nullptr);
-    type.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    type.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    type.lpszClassName = "SchedulingWindow";
-    if (!RegisterClassA(&type)) throw runtime_error("Cannot register the window.");
-    HWND window = CreateWindowA(type.lpszClassName, "CPU Scheduling Algorithms Simulation Using Data Structures",
-        WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT, 1050, 700,
-        nullptr, nullptr, type.hInstance, nullptr);
-    if (!window) throw runtime_error("Cannot open the window.");
-    ShowWindow(window, SW_SHOW);
-    MSG message{};
-    while (GetMessageA(&message, nullptr, 0, 0) > 0) {
-        if (!IsDialogMessageA(window, &message)) {
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
-        }
-    }
-    return 0;
-}
-#endif
-
 int main(int argc, char* argv[]) {
-    bool comparison = false;
-    bool console = false;
-    for (int i = 1; i < argc; ++i) {
-        string option = argv[i];
-        if (option == "--compare") comparison = true;
-        else if (option == "--console") console = true;
-        else {
-            cout << "Usage: CPU_Scheduling_Simulator [--console] [--compare]\n";
-            return option == "--help" ? 0 : 1;
-        }
+    if (argc > 2 || (argc == 2 && string(argv[1]) != "--compare")) {
+        cout << "Usage: CPU_Scheduling_Simulator [--compare]\n";
+        return 1;
     }
     try {
-#ifdef _WIN32
-        if (!console) return runWindow(comparison);
-#else
-        (void)console;
-#endif
-        vector<Process> processes = sample(comparison);
+        vector<Process> processes = sample(argc == 2);
         vector<Result> results;
         for (int algorithm = 0; algorithm < 4; ++algorithm)
             results.push_back(schedule(processes, algorithm, TIME_QUANTUM));
         for (int algorithm = 0; algorithm < 4; ++algorithm)
             cout << formatResults(processes, results, algorithm, TIME_QUANTUM) << '\n';
     } catch (const exception& error) {
-#ifdef _WIN32
-        if (!console) MessageBoxA(nullptr, error.what(), "Error", MB_OK | MB_ICONERROR);
-        else
-#endif
-            cerr << error.what() << '\n';
+        cerr << error.what() << '\n';
         return 1;
     }
     return 0;
